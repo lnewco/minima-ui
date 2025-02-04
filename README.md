@@ -1,1 +1,5 @@
-# minima-ui
+# mnma
+```
+npm install 
+npm run dev
+```
