@@ -14,16 +14,16 @@ export default defineConfig({
 
   plugins: [react()],
 
-  // server: {
-  //   proxy: {
-  //     "/upload": {
-  //       target: "...",
-  //       changeOrigin: true,
-  //       secure: false,
-  //       rewrite: (path) => path.replace(/^\/upload/, "/upload"),
-  //     },
-  //   },
-  // },
+  server: {
+    proxy: {
+      "/upload": {
+        target: "http://54.204.167.118:8001",
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/upload/, "/upload"),
+      },
+    },
+  },
 
   css: {
     devSourcemap: true,

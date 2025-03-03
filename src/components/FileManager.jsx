@@ -1,3 +1,4 @@
+//FileManager
 import { useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types"; // ✅ Added for prop validation
 import useChatStore from "../stores/useChatStore";
@@ -9,7 +10,8 @@ const FileManager = ({ userId }) => {
         uploadedFiles,
         deleteFile,
         renameFile,
-        uploading
+        uploading,
+        disconnectWebSocket
     } = useChatStore();
 
     const [renamingFile, setRenamingFile] = useState(null);
@@ -19,8 +21,17 @@ const FileManager = ({ userId }) => {
     const fileInputRef = useRef(null); // ✅ Native file picker trigger
 
     useEffect(() => {
-        fetchUploadedFiles(userId);
-    }, [userId, fetchUploadedFiles]); // ✅ Added fetchUploadedFiles as dependency
+        const init = async () => {
+            await fetchUploadedFiles(userId);
+        };
+
+        init();
+
+        return () => {
+            disconnectWebSocket();
+        };
+    }, [userId, fetchUploadedFiles, disconnectWebSocket]);
+
 
     const handleFileChange = async (event) => {
         const files = Array.from(event.target.files);

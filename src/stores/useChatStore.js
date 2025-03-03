@@ -1,19 +1,78 @@
 import { create } from "zustand";
 import { uploadFiles, getUploadedFiles } from "../services/api";
 
-// ToDo: fix env vars
-// ✅ WebSocket base URL
-const WS_BASE_URL = import.meta.env.VITE_WS_URL;
+// Ensure the URL is correctly formatted without double slashes
+const WS_BASE_URL = "wss://minima-chat.vitaliti.org/chat";
+
+const constructWebSocketUrl = (userId, conversationName, fileIds = []) => {
+    if (!userId || !conversationName) {
+        console.error("❌ Missing userId or conversationName for WebSocket connection.");
+        return null;
+    }
+
+    const fileIdsParam = fileIds.length > 0 ? fileIds.join(",") : "default";
+    return `${WS_BASE_URL}/${userId}/${conversationName}/${fileIdsParam}`;
+};
 
 const useChatStore = create((set, get) => ({
     messages: [],
     setMessages: (updateFn) => set((state) => ({ messages: updateFn(state.messages) })),
-    isConnected: false,
     ws: null,
+    isConnected: false,
+    connectionAttempts: 0,
+    maxRetries: 3,
+
     fileIds: [],
-    uploadedFiles: [], // ✅ Always an array
+    uploadedFiles: [],
     uploading: false,
     uploadError: null,
+
+    connectWebSocket: (userId, conversationName, fileIds = []) => {
+        const wsUrl = constructWebSocketUrl(userId, conversationName, fileIds);
+
+        if (!wsUrl) return;
+
+        console.log("🔌 Connecting to WebSocket:", wsUrl);
+
+        const ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+            console.log("✅ WebSocket connected!");
+            set({ isConnected: true, ws });
+        };
+
+        ws.onmessage = (event) => {
+            console.log("📩 Received WebSocket message:", event.data);
+
+            try {
+                const newMessage = JSON.parse(event.data);
+                if (newMessage.reporter === "output_message" && newMessage.message) {
+                    set((state) => ({
+                        messages: [...state.messages, { text: newMessage.message, sender: "bot" }]
+                    }));
+                }
+            } catch (error) {
+                console.error("❌ Failed to parse WebSocket message:", event.data, error);
+            }
+        };
+
+        ws.onerror = (error) => {
+            console.error("❌ WebSocket error:", error);
+        };
+
+        ws.onclose = (event) => {
+            console.warn(`⚠️ WebSocket closed, reason: ${event.code}`);
+
+            if (event.code === 1006) {
+                console.log("🔄 Retrying WebSocket connection in 5s...");
+                setTimeout(() => {
+                    get().connectWebSocket(userId, conversationName, fileIds);
+                }, 5000);
+            }
+
+            set({ isConnected: false });
+        };
+    },
 
     uploadFiles: async (userId, files) => {
         set({ uploading: true, uploadError: null });
@@ -29,115 +88,73 @@ const useChatStore = create((set, get) => ({
         console.log("✅ File upload successful:", response);
         set({ fileIds: response.fileIds || [], uploading: false });
 
-        // ✅ Fetch updated file list after upload
         await get().fetchUploadedFiles(userId);
 
-        // ✅ Connect WebSocket if there are uploaded files
         const updatedFiles = get().uploadedFiles;
         if (updatedFiles.length > 0) {
-            get().connectWebSocket(userId, "default_conversation", updatedFiles.map(file => file.file_id));
+            await get().connectWebSocket(userId, "default_conversation", updatedFiles.map(file => file.file_id));
         }
     },
 
     fetchUploadedFiles: async (userId) => {
-        const response = await getUploadedFiles(userId);
-
-        console.log("📂 API Response for files:", response);
-
-        let parsedResponse;
         try {
-            parsedResponse = JSON.parse(response);
-        } catch {
-            console.error("❌ Failed to parse API response:", response);
-            parsedResponse = [];
-        }
+            const response = await getUploadedFiles(userId);
+            console.log("📂 API Response for files:", response);
 
-        if (!Array.isArray(parsedResponse)) {
-            console.warn("⚠️ Unexpected API response. Expected an array but got:", parsedResponse);
-            return;
-        }
+            const files = Array.isArray(response) ? response : [];
 
-        set({ uploadedFiles: parsedResponse });
-        console.log("✅ Updated uploadedFiles state:", parsedResponse);
+            if (files.length === 0) {
+                console.warn("⚠️ No files found or invalid response format");
+            }
 
-        // ✅ Automatically connect WebSocket if files exist
-        if (parsedResponse.length > 0) {
-            get().connectWebSocket(userId, "default_conversation", parsedResponse.map(file => file.file_id));
+            set({ uploadedFiles: files });
+
+            if (files.length > 0) {
+                await get().connectWebSocket(userId, "default_conversation", files.map(file => file.file_id));
+            }
+        } catch (error) {
+            console.error("❌ Error fetching files:", error);
+            set({ uploadedFiles: [] });
         }
     },
 
-    connectWebSocket: (userId, conversationName, fileIds = []) => {
-        if (!WS_BASE_URL) {
-            console.error("WebSocket URL is not defined in .env");
-            return;
+    disconnectWebSocket: () => {
+        const { ws } = get();
+        if (ws) {
+            ws.close(1000, "Normal closure");
+            set({
+                ws: null,
+                isConnected: false,
+                connectionAttempts: 0
+            });
         }
-
-        if (fileIds.length === 0) {
-            console.warn("⚠️ No uploaded files, skipping WebSocket connection.");
-            return;
-        }
-
-        const fileIdsParam = fileIds.length > 0 ? fileIds.join(",") : "default";
-        const wsUrl = `${WS_BASE_URL}/${userId}/${conversationName}/${fileIdsParam}`;
-
-        console.log("🔌 Connecting to WebSocket:", wsUrl);
-
-        const ws = new WebSocket(wsUrl);
-
-        ws.onopen = () => {
-            console.log("✅ WebSocket connected!");
-            set({ isConnected: true });
-        };
-
-        ws.onmessage = (event) => {
-            console.log("📩 WebSocket received:", event.data);
-
-            try {
-                const newMessage = JSON.parse(event.data);
-
-                // ❌ Ignore 'input_message' (question echoes)
-                if (newMessage.reporter === "input_message") {
-                    return; // Ignore echoed input messages
-                }
-
-                // ✅ Only process 'output_message' (AI response)
-                if (newMessage.reporter === "output_message" && newMessage.message) {
-                    set((state) => ({
-                        messages: [...state.messages, { text: newMessage.message, sender: "bot" }]
-                    }));
-                }
-            } catch {
-                console.error("❌ Failed to parse WebSocket message:", event.data);
-            }
-        };
-
-        ws.onerror = () => {
-            console.error("❌ WebSocket error occurred");
-        };
-
-        ws.onclose = (event) => {
-            console.warn(`⚠️ WebSocket closed, reason: ${event.code}`);
-
-            if (event.code === 1006) {
-                console.log("🔄 Retrying WebSocket connection in 5s...");
-                setTimeout(() => {
-                    get().connectWebSocket(userId, conversationName, fileIds);
-                }, 5000);
-            }
-
-            set({ isConnected: false });
-        };
-
-        set({ ws });
     },
 
     sendMessage: (message) => {
-        const ws = get().ws;
+        const { ws } = get();
         if (ws && ws.readyState === WebSocket.OPEN) {
-            console.log("📤 Sending WebSocket message:", message);
-            ws.send(JSON.stringify({ text: message }));
+            const messageData = {
+                type: 'message',
+                content: message,
+                timestamp: new Date().toISOString()
+            };
+
+            try {
+                ws.send(JSON.stringify(messageData));
+
+                set(state => ({
+                    messages: [...state.messages, {
+                        id: Date.now(),
+                        text: message,
+                        sender: 'user',
+                        timestamp: messageData.timestamp
+                    }]
+                }));
+            } catch (error) {
+                console.error("Failed to send message:", error);
+            }
         } else {
-            console.warn("⚠️ WebSocket is not open!");
+            console.warn("WebSocket is not connected");
         }
     },
 

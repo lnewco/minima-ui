@@ -1,7 +1,9 @@
 import axios from 'axios';
 
 // ToDo: fix env vars
-const API_BASE_URL = import.meta.env.VITE_API_URL;
+const API_BASE_URL = "/upload/";
+// const API_BASE_URL = "https://minima-upload.vitaliti.org/upload/";
+console.log('import.meta.env.VITE_WS_URL', import.meta.env);
 
 export const uploadFiles = async (userId, files) => {
     if (!userId) {
@@ -57,5 +59,26 @@ export const getUploadedFiles = async (userId) => {
     } catch (error) {
         console.error("❌ Error fetching uploaded files:", error.response?.data || error.message);
         return { error: error.response?.data?.detail || "Failed to fetch files" };
+    }
+};
+
+export const getCustomers = async () => {
+    try {
+        const response = await fetch('https://synapse-dev.vitaliti.org/customers', {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data.data.items;
+    } catch (error) {
+        console.error('Error fetching customers:', error);
+        return [];
     }
 };
