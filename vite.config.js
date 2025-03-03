@@ -1,16 +1,29 @@
-import { resolve } from "path";
+import react from "@vitejs/plugin-react";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
 import { defineConfig } from "vite";
 
-// import strip from "@rollup/plugin-strip";
+// Define __dirname manually for ESM
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 export default defineConfig({
   root: "./src",
   base: "./",
+  envPrefix: "VITE_",
 
-  server: {
-    open: "./src/index.html",
-    host: true,
-  },
+  plugins: [react()],
+
+  // server: {
+  //   proxy: {
+  //     "/upload": {
+  //       target: "...",
+  //       changeOrigin: true,
+  //       secure: false,
+  //       rewrite: (path) => path.replace(/^\/upload/, "/upload"),
+  //     },
+  //   },
+  // },
 
   css: {
     devSourcemap: true,
@@ -28,56 +41,19 @@ export default defineConfig({
     emptyOutDir: true,
     target: "es2015",
 
-    // css: {
-    //   preprocessorOptions: {
-    //     scss: {
-    //       additionalData: `
-    //         @import "./src/styles/variables";
-    //         @import "./src/styles/mixins";
-    //         @import "./src/styles/general";
-    //         @import "./src/styles/header";
-    //         @import "./src/styles/blocks";
-    //         @import "./src/styles/footer";
-    //         @import "./src/styles/modal";
-    //       `
-    //     }
-    //   }
-    // },
-
     rollupOptions: {
       input: {
-        main: resolve(__dirname, "./src/index.html"),
+        main: resolve(__dirname, "./src/main.jsx"),
       },
       output: {
         manualChunks: undefined,
-
-        /* https://stackoverflow.com/questions/71180561/vite-change-ouput-directory-of-assets
-        *****************************************************************************************/
-
-        // assetFileNames: (assetInfo) => {
-        //   let extType = assetInfo.name.split('.').at(1);
-        //   if (/png|jpe?g|svg|gif|tiff|bmp|ico/i.test(extType)) {
-        //     extType = 'img';
-        //   }
-        //   return `assets/${extType}/[name]-[hash][extname]`;
-        // },
-
         assetFileNames: ({ name }) => {
           if (/\.(gif|jpe?g|png|svg)$/.test(name ?? "")) {
             return `[name][extname]`;
           }
-
-          // if (/\.css$/.test(name ?? "")) {
-          //   //return "assets/css/[name]-[hash][extname]";
-          //   return `css/[name]-[hash][extname]`;
-          // }
-
-          // // default value
-          // // ref: https://rollupjs.org/guide/en/#outputassetfilenames
           return "[name]-[hash][extname]";
         },
       },
-    //   plugins: [strip()],
     },
   },
 });
